@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile,File,HTTPException,Form
+from fastapi.middleware.cors import CORSMiddleware
 import requests
 from fastapi.responses import JSONResponse
 import json
@@ -14,8 +15,17 @@ from openai import OpenAI
 import numpy as np
 dotenv.load_dotenv()
 
+app = FastAPI()
+# cors
 
-# funcs
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['http://localhost:3000'],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
 
 # uploading into s3
 s3 = boto3.client(
@@ -25,7 +35,6 @@ s3 = boto3.client(
     region_name=os.getenv("AWS_REGION"),
     )
 BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME")
-app = FastAPI()
 async def uploadToCloud(image:UploadFile=File()):
     try:
         contents = await image.read()
@@ -57,8 +66,6 @@ def calculateMetrics(height,width,landmarks):
     rightShoulder = (landmarks[12].x * width, landmarks[12].y * height)
     leftHip = (landmarks[23].x * width, landmarks[23].y * height)
     rightHip = (landmarks[24].x * width, landmarks[24].y * height)
-    leftAnkle = (landmarks[27].x * width, landmarks[27].y * height)
-    rightAnkle = (landmarks[28].x * width, landmarks[28].y * height)
     
     hipWidth = euclidean(leftHip,rightHip)
     waistWidth = euclidean(leftWaist,rightWaist)
@@ -67,7 +74,6 @@ def calculateMetrics(height,width,landmarks):
     shoulderToWaistRatio = shoulderWidth/waistWidth
     waistToHipRatio = waistWidth/hipWidth
     shoulderAsymmetricLine = (leftShoulder[0] - rightShoulder[0], leftShoulder[1] - rightShoulder[1])
-    averageLegLength = (euclidean(leftAnkle,leftHip)+euclidean(rightAnkle,rightHip))/2
     
     dx = rightShoulder[0] - leftShoulder[0]
     dy = rightShoulder[1] - leftShoulder[1]
@@ -78,7 +84,6 @@ def calculateMetrics(height,width,landmarks):
         "shoulderToWaistRatio":shoulderToWaistRatio,
         "waistToHipRatio":waistToHipRatio,
         "shoulderAsymmetricLine":shoulderAsymmetricLine,
-        "averageLegLength":averageLegLength,
         "shoulderAngle":shoulderAngle,
         
     }
@@ -117,7 +122,6 @@ async def func(image:UploadFile = File(),userInfo:str=Form()):
         - Weight: {userInfo.weight} kg
         - waistToHipRatio: {metrics["waistToHipRatio"]} 
         - shoulderToWaistRatio: {metrics["shoulderToWaistRatio"]} 
-        - averageLegLength: {metrics["averageLegLength"]} 
         - shoulderAsymmetricLine: {metrics["shoulderAsymmetricLine"]} 
         - shoulderAngle: {metrics["shoulderAngle"]} 
         - targetWeight: {userInfo.targetWeight} kg
@@ -127,7 +131,7 @@ async def func(image:UploadFile = File(),userInfo:str=Form()):
         -
         "plan" and "advices" "brief analysis", "plan" must have fielrs 'week1' week2 etc , in each week array of 7 like days and in each day  
         of exercies in each exercise
-        should be array of exercise objects , in each object  must be a title of exercise amount of repeats if its for time exerices  should have field time 
+        should be array of exercise objects , in each object  must be a title of exercise amount of repeats if its for time exerices maybe if its real gif field with real url of gif ,should have field time.Each day should have field status where initial value should be incompleted 
         """
         completion= client.chat.completions.create(
             model="gpt-4o-mini",
