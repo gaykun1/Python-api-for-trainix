@@ -117,22 +117,53 @@ async def func(image:UploadFile = File(),userInfo:str=Form()):
     metrics = getMetrics(url=content["url"])
     try:
         prompt = f"""
-        User has such metrics:
-        - Height: {userInfo.height} cm
-        - Weight: {userInfo.weight} kg
-        - waistToHipRatio: {metrics["waistToHipRatio"]} 
-        - shoulderToWaistRatio: {metrics["shoulderToWaistRatio"]} 
-        - shoulderAsymmetricLine: {metrics["shoulderAsymmetricLine"]} 
-        - shoulderAngle: {metrics["shoulderAngle"]} 
-        - targetWeight: {userInfo.targetWeight} kg
-        - fitnessLevel: {userInfo.fitnessLevel}
-        - primaryFitnessGoal: {userInfo.primaryFitnessGoal}
-        Create detail fitness-plan for a month (each day) considering each month has different day amount , response must be in json with format like 
-        -
-        "plan" and "advices" "brief analysis", "plan" must have fielrs 'week1' week2 etc , in each week array of 7 like days and in each day  
-        of exercies in each exercise
-        should be array of exercise objects , in each object  must be a title of exercise amount of repeats if its for time exerices maybe if its real gif field with real url of gif ,should have field time.Each day should have field status where initial value should be incompleted 
-        """
+You are a professional fitness coach.
+
+User data and body metrics:
+- Height: {userInfo.height} cm
+- Weight: {userInfo.weight} kg
+- Waist to Hip Ratio: {metrics["waistToHipRatio"]}
+- Shoulder to Waist Ratio: {metrics["shoulderToWaistRatio"]}
+- Shoulder Asymmetric Line: {metrics["shoulderAsymmetricLine"]}
+- Shoulder Angle: {metrics["shoulderAngle"]}
+- Target Weight: {userInfo.targetWeight} kg
+- Fitness Level: {userInfo.fitnessLevel}
+- Primary Fitness Goal: {userInfo.primaryFitnessGoal}
+
+Please create a detailed 4-week fitness plan for the user.
+
+The plan should be structured as JSON with the following format:
+
+{{
+  "brief_analysis": {{
+    "current_metrics": {{
+      "height": "string",
+      "weight": "string",
+      "waist_to_hip_ratio": number,
+      "shoulder_to_waist_ratio": number
+    }},
+    "target_weight": "string",
+    "fitness_level": "string",
+    "primary_fitness_goal": "string"
+  }},
+  "plan": {{
+    "week1": [
+      {{ "day": "string", "exercises": [{{ "title": "string", "repeats": number|null, "time": number|null }}] }}
+    ],
+    "week2": [...],
+    "week3": [...],
+    "week4": [...]
+  }},
+  "advices": {{
+    "nutrition": "string",
+    "hydration": "string",
+    "recovery": "string",
+    "progress": "string"
+  }}
+}}
+
+Do not include any explanations, only return the JSON object.      """ 
+ 
         completion= client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
