@@ -59,36 +59,55 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 def euclidean(p1, p2):
     return math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
 
-def calculateMetrics(height,width,landmarks):
+def calculateMetrics(height,width,landmarks,poseHeight,poseWeight,gender):
     leftShoulder = (landmarks[11].x * width, landmarks[11].y * height)
     leftWaist = ((landmarks[11].x * width +landmarks[23].x * width)/2,(landmarks[11].y * height +landmarks[23].y * height)/2)
     rightWaist = ((landmarks[12].x * width +landmarks[24].x * width)/2,(landmarks[12].y * height +landmarks[24].y * height)/2)
     rightShoulder = (landmarks[12].x * width, landmarks[12].y * height)
     leftHip = (landmarks[23].x * width, landmarks[23].y * height)
     rightHip = (landmarks[24].x * width, landmarks[24].y * height)
-    
     hipWidth = euclidean(leftHip,rightHip)
     waistWidth = euclidean(leftWaist,rightWaist)
     shoulderWidth = euclidean(leftShoulder,rightShoulder)
-    
+    neckCircumference =shoulderWidth * 2 * 1.6
+    waistCircumference =hipWidth * 1.4
+    hipCircumference = waistCircumference * 1.1; 
     shoulderToWaistRatio = shoulderWidth/waistWidth
     waistToHipRatio = waistWidth/hipWidth
     shoulderAsymmetricLine = (leftShoulder[0] - rightShoulder[0], leftShoulder[1] - rightShoulder[1])
-    
+    if gender =="Male":
+        val = waistCircumference - neckCircumference
+        if val <= 0:
+            bodyFatPercent = 0; 
+        else :
+            bodyFatPercent = 86.010 * math.log10(val) - 70.041 * math.log10(poseHeight) + 36.76
+    else :
+        val = waistCircumference + hipCircumference - neckCircumference
+        if val <= 0:
+            bodyFatPercent = 0
+        else :
+            bodyFatPercent = 163.205 * math.log10(val) - 97.684 * math.log10(poseHeight) - 78.387
+    leanBodyMass = poseWeight * (1 - bodyFatPercent / 100)
+    muscleMass = leanBodyMass * 0.55
+  
+  
     dx = rightShoulder[0] - leftShoulder[0]
     dy = rightShoulder[1] - leftShoulder[1]
     angleRad = math.atan2(dy, dx)
     shoulderAngle = math.degrees(angleRad) 
-       
+  
+        
     return {
-        "shoulderToWaistRatio":shoulderToWaistRatio,
-        "waistToHipRatio":waistToHipRatio,
+        "shoulderToWaistRatio":shoulderToWaistRatio.toFixed(2),
+        "waistToHipRatio":waistToHipRatio.toFixed(2),
         "shoulderAsymmetricLine":shoulderAsymmetricLine,
         "shoulderAngle":shoulderAngle,
-        
+        "bodyFatPercent":bodyFatPercent.toFixed(2),
+        "muscleMass":muscleMass.toFixed(2),
+        "leanBodyMass":leanBodyMass.toFixed(2),
     }
 
-def getMetrics(url:str):
+def getMetrics(url:str,poseHeight,gender,poseWeight):
     mp_pose = mp.solutions.pose
     Pose = mp_pose.Pose(static_image_mode=True)
     res = requests.get(url)
@@ -97,7 +116,7 @@ def getMetrics(url:str):
     RGBImage= cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
     results = Pose.process(RGBImage)
     h,w,_=image.shape
-    return calculateMetrics(height=h,width=w,landmarks=results.pose_landmarks.landmark)
+    return calculateMetrics(height=h,width=w,landmarks=results.pose_landmarks.landmark,poseHeight=poseHeight,gender=gender,poseWeight=poseWeight)
 
 # api
 class UserInfo(BaseModel):
@@ -106,7 +125,7 @@ class UserInfo(BaseModel):
     targetWeight: int
     primaryFitnessGoal: str
     fitnessLevel: str
-    
+    gender:str
 @app.post("/api")
 async def func(image:UploadFile = File(),userInfo:str=Form()):
     if image.content_type not in ["image/jpeg", "image/png"]:
@@ -114,7 +133,7 @@ async def func(image:UploadFile = File(),userInfo:str=Form()):
     content = await uploadToCloud(image)
     data = json.loads(userInfo)
     userInfo = UserInfo(**data)
-    metrics = getMetrics(url=content["url"])
+    metrics = getMetrics(url=content["url"],poseHeight=userInfo.height,gender=userInfo.gender,poseWeight=userInfo.weight)
     try:
         prompt = f"""
 You are a professional fitness coach.
@@ -129,31 +148,38 @@ User data and body metrics:
 - Target Weight: {userInfo.targetWeight} kg
 - Fitness Level: {userInfo.fitnessLevel}
 - Primary Fitness Goal: {userInfo.primaryFitnessGoal}
-
+-bodyFat Percent: {metrics["bodyFatPercent"]}
+-muscle Mass: {metrics["muscleMass"]}
+-lean body Mass: {metrics["leanBodyMass"]}
 Please create a detailed 4-week fitness plan for the user.
 
 The plan should be structured as JSON with the following format:
 
 {{
-  "brief_analysis": {{
-    "current_metrics": {{
-      "height": "string",
-      "weight": "string",
-      "waist_to_hip_ratio": number,
-      "shoulder_to_waist_ratio": number
+  "briefAnalysis": {{
+    "currentMetrics": {{
+      "height": "number",
+      "weight": "number",
+      "waistToHipRatio": number,
+      "shoulderToWaistRatio": number,
+      "bodyFatPercent": number,
+      "muscleMass": number,
+      "leanBodyMass": number,
     }},
-    "target_weight": "string",
-    "fitness_level": "string",
-    "primary_fitness_goal": "string"
+    "targetWeight": "number",
+    "fitnessLevel": "string",
+    "primaryFitnessGoal": "string"
   }},
-  "plan": {{
-    "week1": [
-      {{ "day": "string", "exercises": [{{ "title": "string", "repeats": number|null, "time": number|null }}] }}
-    ],
-    "week2": [...],
-    "week3": [...],
-    "week4": [...]
-  }},
+  "plan":{{week1Title:"Muscle Gain & Endurance",week2Title:...,week3Title:...,week4Title:...,   days: [
+      {{ "day": "string","calories":"number","status":"incompleted", "exercises": [{{ "title": "string","repeats": number|null, "time": number|null }}] }} -// time must be in seconds 
+    {{...}},
+    {{...}},
+    {{...}},
+ 
+    
+   ]}}
+
+  ,
   "advices": {{
     "nutrition": "string",
     "hydration": "string",
@@ -162,7 +188,7 @@ The plan should be structured as JSON with the following format:
   }}
 }}
 
-Do not include any explanations, only return the JSON object.      """ 
+Do not include any explanations, only return the JSON object.Must be n items in plan where n -days of current month and item - day"""  
  
         completion= client.chat.completions.create(
             model="gpt-4o-mini",
@@ -172,6 +198,6 @@ Do not include any explanations, only return the JSON object.      """
             ],
             temperature=0.7
         )
-        return {"AIreport": completion.choices[0].message.content}
+        return {"AIreport": completion.choices[0].message.content,"imageUrl":content["url"]}
     except Exception as error:
         raise HTTPException(status_code=500,detail=str(error))
