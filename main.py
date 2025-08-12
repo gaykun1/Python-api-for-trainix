@@ -98,13 +98,13 @@ def calculateMetrics(height,width,landmarks,poseHeight,poseWeight,gender):
   
         
     return {
-        "shoulderToWaistRatio":shoulderToWaistRatio.toFixed(2),
-        "waistToHipRatio":waistToHipRatio.toFixed(2),
+        "shoulderToWaistRatio":round(shoulderToWaistRatio,2),
+        "waistToHipRatio":round(waistToHipRatio,2),
         "shoulderAsymmetricLine":shoulderAsymmetricLine,
         "shoulderAngle":shoulderAngle,
-        "bodyFatPercent":bodyFatPercent.toFixed(2),
-        "muscleMass":muscleMass.toFixed(2),
-        "leanBodyMass":leanBodyMass.toFixed(2),
+        "bodyFatPercent":round(bodyFatPercent,2),
+        "muscleMass":round(muscleMass,2),
+        "leanBodyMass":round(leanBodyMass,2),
     }
 
 def getMetrics(url:str,poseHeight,gender,poseWeight):
@@ -171,15 +171,13 @@ The plan should be structured as JSON with the following format:
     "primaryFitnessGoal": "string"
   }},
   "plan":{{week1Title:"Muscle Gain & Endurance",week2Title:...,week3Title:...,week4Title:...,   days: [
-      {{ "day": "string","calories":"number","status":"incompleted", "exercises": [{{ "title": "string","repeats": number|null, "time": number|null }}] }} -// time must be in seconds 
+      {{ "day": "Upper Body Focus"|"Lower Body Focus"|"Rest Day / Active Recovery"|"Full Body & Core","calories":"number""status":"pending", "exercises": [{{ "title": "string","repeats": number|null, "time": number|null,"instruction":"string","advices":"string", }}] }} -// time must be in seconds 
     {{...}},
     {{...}},
     {{...}},
  
     
-   ]}}
-
-  ,
+   ]}},
   "advices": {{
     "nutrition": "string",
     "hydration": "string",
@@ -188,7 +186,8 @@ The plan should be structured as JSON with the following format:
   }}
 }}
 
-Do not include any explanations, only return the JSON object.Must be n items in plan where n -days of current month and item - day"""  
+Please return ONLY valid JSON. No explanations, no comments, no extra brackets or symbols. The JSON must be parseable.!!!In the field plan (must be one in report) there MUST be !!30!! days. In the field- advices add to each of filds in in it at least 5 sentences
+"""  
  
         completion= client.chat.completions.create(
             model="gpt-4o-mini",
