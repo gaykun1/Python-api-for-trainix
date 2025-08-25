@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile,File,HTTPException,Form
+from fastapi import FastAPI, UploadFile,File,HTTPException,Form,Query
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 from fastapi.responses import JSONResponse
@@ -13,6 +13,7 @@ import math
 from pydantic import BaseModel
 from openai import OpenAI
 import numpy as np
+from typing import Optional
 dotenv.load_dotenv()
 
 app = FastAPI()
@@ -41,10 +42,10 @@ async def uploadToCloud(image:UploadFile=File()):
         s3.upload_fileobj(
             Fileobj=io.BytesIO(contents),
             Bucket=BUCKET_NAME,
-            Key=image.filename,
+            Key=f"trainix/body-images/{image.filename}",
             ExtraArgs={"ContentType":image.content_type}    
         )
-        url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{image.filename}"
+        url = f"https://{BUCKET_NAME}.s3.eu-north-1.amazonaws.com/trainix/body-images/{image.filename}"
         return {
             "bytes": len(contents),
             "filename": image.filename,
@@ -126,7 +127,14 @@ class UserInfo(BaseModel):
     primaryFitnessGoal: str
     fitnessLevel: str
     gender:str
-@app.post("/api")
+    waistToHipRatio: Optional[int]=None
+    shoulderToWaistRatio: Optional[int]=None
+    bodyFatPercent:Optional[int]=None
+    muscleMass:Optional[int]=None
+    leanBodyMass:Optional[int]=None
+ 
+# api for analyzing photo and creating fitness plan
+@app.post("/api/photo-analyze")
 async def func(image:UploadFile = File(),userInfo:str=Form()):
     if image.content_type not in ["image/jpeg", "image/png"]:
         raise HTTPException(status_code=400,detail="Wrong format")
@@ -135,58 +143,68 @@ async def func(image:UploadFile = File(),userInfo:str=Form()):
     userInfo = UserInfo(**data)
     metrics = getMetrics(url=content["url"],poseHeight=userInfo.height,gender=userInfo.gender,poseWeight=userInfo.weight)
     try:
+        metrics = {
+      "height": userInfo.height,
+      "weight": userInfo.weight,
+      "waistToHipRatio": metrics["waistToHipRatio"],
+      "shoulderToWaistRatio": metrics["shoulderToWaistRatio"],
+      "bodyFatPercent": metrics["bodyFatPercent"],
+      "muscleMass": metrics["muscleMass"],
+      "leanBodyMass": metrics["leanBodyMass"],
+    }
+
+        return {"AIreport": metrics,"imageUrl":content["url"]}
+    except Exception as error:
+        raise HTTPException(status_code=500,detail=str(error))
+
+# api for analyzing user metrics + extra info and creating fitness plan 
+@app.post("/api/fitnessPlan") 
+async def func(userInfo:UserInfo,dayNumber: int = Query(..., description="Number of the day to generate")):
+    try:
         prompt = f"""
-You are a professional fitness coach.
+        You are a professional certified fitness coach.
 
-User data and body metrics:
-- Height: {userInfo.height} cm
-- Weight: {userInfo.weight} kg
-- Waist to Hip Ratio: {metrics["waistToHipRatio"]}
-- Shoulder to Waist Ratio: {metrics["shoulderToWaistRatio"]}
-- Shoulder Asymmetric Line: {metrics["shoulderAsymmetricLine"]}
-- Shoulder Angle: {metrics["shoulderAngle"]}
-- Target Weight: {userInfo.targetWeight} kg
-- Fitness Level: {userInfo.fitnessLevel}
-- Primary Fitness Goal: {userInfo.primaryFitnessGoal}
--bodyFat Percent: {metrics["bodyFatPercent"]}
--muscle Mass: {metrics["muscleMass"]}
--lean body Mass: {metrics["leanBodyMass"]}
-Please create a detailed 4-week fitness plan for the user.
+        Generate a fitness plan for **one day only** if daynumber is 1 than first three fiels is required else notinclude ONLY DAY FIELD**.
 
-The plan should be structured as JSON with the following format:
+        User data:
+        - Height: {userInfo.height} cm
+        - Weight: {userInfo.weight} kg
+        - Waist to Hip Ratio: {userInfo.waistToHipRatio}
+        - Shoulder to Waist Ratio: {userInfo.shoulderToWaistRatio}
+        - Target Weight: {userInfo.targetWeight} kg
+        - Fitness Level: {userInfo.fitnessLevel}
+        - Primary Fitness Goal: {userInfo.primaryFitnessGoal}
+        - BodyFat Percent: {userInfo.bodyFatPercent}
+        - Muscle Mass: {userInfo.muscleMass}
+        - Lean Body Mass: {userInfo.leanBodyMass}
+
+        Day number: {dayNumber}
+
+        Format JSON as:
 
 {{
   "briefAnalysis": {{
-    "currentMetrics": {{
-      "height": "number",
-      "weight": "number",
-      "waistToHipRatio": number,
-      "shoulderToWaistRatio": number,
-      "bodyFatPercent": number,
-      "muscleMass": number,
-      "leanBodyMass": number,
-    }},
-    "targetWeight": "number",
-    "fitnessLevel": "string",
-    "primaryFitnessGoal": "string"
+  targetWeight: number;
+  fitnessLevel: string;
+  primaryFitnessGoal: string;
   }},
-  "plan":{{week1Title:"Muscle Gain & Endurance",week2Title:...,week3Title:...,week4Title:...,   days: [
-      {{ "day": "Upper Body Focus"|"Lower Body Focus"|"Rest Day / Active Recovery"|"Full Body & Core","calories":"number""status":"pending", "exercises": [{{ "title": "string","repeats": number|null, "time": number|null,"instruction":"string","advices":"string", }}] }} -// time must be in seconds 
-    {{...}},
-    {{...}},
-    {{...}},
- 
-    
-   ]}},
-  "advices": {{
+    "advices": {{
     "nutrition": "string",
     "hydration": "string",
     "recovery": "string",
     "progress": "string"
-  }}
-}}
-
-Please return ONLY valid JSON. No explanations, no comments, no extra brackets or symbols. The JSON must be parseable.!!!In the field plan (must be one in report) there MUST be !!30!! days. In the field- advices add to each of filds in in it at least 5 sentences
+  }},
+  week1Title:"Muscle Gain & Endurance",
+  week2Title:...,
+  week3Title:...,
+  week4Title:...,   
+  day:
+      {{ "day": "Upper Body Focus"|"Lower Body Focus"|"Rest Day / Active Recovery"|"Full Body & Core","calories":"number""status":"Pending", "exercises": [{{"imageUrl":"string","status":"incompleted","calories":"number",, "title": "string","repeats": number|null, "time": number|null,"instruction":"string","advices":"string", }}] }} -// time must be in seconds 
+ 
+ 
+    
+   }}
+Please return ONLY valid JSON. No explanations, no comments, no extra brackets or symbols. In EACH DAY MUST BE CALORIES field which value is sum of exercises calories fields.!!!Exercise with repeats must have time:null and with time must have repeats:null!!!! In the field- advices add to each of filds in in it at least 5 sentences.
 """  
  
         completion= client.chat.completions.create(
@@ -198,5 +216,79 @@ Please return ONLY valid JSON. No explanations, no comments, no extra brackets o
             temperature=0.7
         )
         return {"AIreport": completion.choices[0].message.content,"imageUrl":content["url"]}
+    except Exception as error:
+        raise HTTPException(status_code=500,detail=str(error))
+
+
+# api for analyzing user metrics + extra info and creating nutrition plan 
+@app.post("/api/nutrition")    
+async def func(userInfo:UserInfo,dayNumber: int = Query(..., description="Number of the day to generate")):
+   
+    try:
+        prompt = f"""
+        You are a professional certified nutritionist.
+
+        Generate a nutrition plan for **one day only**.
+
+        User data:
+        - Height: {userInfo.height} cm
+        - Weight: {userInfo.weight} kg
+        - Waist to Hip Ratio: {userInfo.waistToHipRatio}
+        - Shoulder to Waist Ratio: {userInfo.shoulderToWaistRatio}
+        - Target Weight: {userInfo.targetWeight} kg
+        - Fitness Level: {userInfo.fitnessLevel}
+        - Primary Fitness Goal: {userInfo.primaryFitnessGoal}
+        - BodyFat Percent: {userInfo.bodyFatPercent}
+        - Muscle Mass: {userInfo.muscleMass}
+        - Lean Body Mass: {userInfo.leanBodyMass}
+
+        Day number: {dayNumber}
+
+        Format JSON as:
+        {{
+        "dayNumber": {dayNumber},
+        "date": "YYYY-MM-DD",
+        "dailyGoals": {{
+            "calories": {{ "current": 0, "target": number }},
+            "protein": {{ "current": 0, "target": number }},
+            "carbs": {{ "current": 0, "target": number }},
+            "fats": {{ "current": 0, "target": number }}
+        }},
+        
+        ,
+        "meals": [
+            {{
+            "imageUrl":"string",
+            "foodIntake":"Snack"|"Lunch"|"Breakfast"|"Dinner"
+            "mealTitle": "string,
+            "time": "HH:MM",
+            "description": "string",
+            "ingredients": ["string", "string", ...],
+            "preparation": "string",
+            "mealCalories": number,
+            "mealProtein": number,
+            "mealCarbs": number,
+            "status":"pending",
+            "mealFats": number
+            }}
+        ]
+        }}
+        waterIntake : {{
+            current: number,
+            target: number
+        }}
+        
+        Return ONLY valid JSON, parseable.IN the meal title must be only name of the dish without words breakfast - etc.Sum of all calories of the meals must be the value of dailyGoals.calories and so with fats protein carbs
+        """
+ 
+        completion= client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "professional  certified nutritionist"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        return {"AIreport": completion.choices[0].message.content}
     except Exception as error:
         raise HTTPException(status_code=500,detail=str(error))
