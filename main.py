@@ -121,17 +121,17 @@ def getMetrics(url:str,poseHeight,gender,poseWeight):
 
 # api
 class UserInfo(BaseModel):
-    weight: int
-    height: int
-    targetWeight: int
+    weight: float
+    height: float
+    targetWeight: float
     primaryFitnessGoal: str
     fitnessLevel: str
     gender:str
-    waistToHipRatio: Optional[int]=None
-    shoulderToWaistRatio: Optional[int]=None
-    bodyFatPercent:Optional[int]=None
-    muscleMass:Optional[int]=None
-    leanBodyMass:Optional[int]=None
+    waistToHipRatio: Optional[float]=None
+    shoulderToWaistRatio: Optional[float]=None
+    bodyFatPercent:Optional[float]=None
+    muscleMass:Optional[float]=None
+    leanBodyMass:Optional[float]=None
  
 # api for analyzing photo and creating fitness plan
 @app.post("/api/photo-analyze")
@@ -161,50 +161,100 @@ async def func(image:UploadFile = File(),userInfo:str=Form()):
 @app.post("/api/fitnessPlan") 
 async def func(userInfo:UserInfo,dayNumber: int = Query(..., description="Number of the day to generate")):
     try:
-        prompt = f"""
-        You are a professional certified fitness coach.
+        prompt =  f"""
+You are a professional certified fitness coach.
 
-        Generate a fitness plan for **one day only** if daynumber is 1 than first three fiels is required else notinclude ONLY DAY FIELD**.
+Your task is to generate JSON fitness plans depending on the day number.
 
-        User data:
-        - Height: {userInfo.height} cm
-        - Weight: {userInfo.weight} kg
-        - Waist to Hip Ratio: {userInfo.waistToHipRatio}
-        - Shoulder to Waist Ratio: {userInfo.shoulderToWaistRatio}
-        - Target Weight: {userInfo.targetWeight} kg
-        - Fitness Level: {userInfo.fitnessLevel}
-        - Primary Fitness Goal: {userInfo.primaryFitnessGoal}
-        - BodyFat Percent: {userInfo.bodyFatPercent}
-        - Muscle Mass: {userInfo.muscleMass}
-        - Lean Body Mass: {userInfo.leanBodyMass}
+STRICT RULES:
+- If dayNumber == 1  generate the FULL JSON object with ALL fields listed below.
+- If dayNumber > 1  generate ONLY the `day` field (do NOT include briefAnalysis, advices, weekTitles, etc.).
 
-        Day number: {dayNumber}
+User data:
+- Height: {userInfo.height} cm
+- Weight: {userInfo.weight} kg
+- Waist to Hip Ratio: {userInfo.waistToHipRatio}
+- Shoulder to Waist Ratio: {userInfo.shoulderToWaistRatio}
+- Target Weight: {userInfo.targetWeight} kg
+- Fitness Level: {userInfo.fitnessLevel}
+- Primary Fitness Goal: {userInfo.primaryFitnessGoal}
+- BodyFat Percent: {userInfo.bodyFatPercent}
+- Muscle Mass: {userInfo.muscleMass}
+- Lean Body Mass: {userInfo.leanBodyMass}
 
-        Format JSON as:
+Day number: {dayNumber}
+
+---
+
+### JSON FORMAT
+
+If dayNumber == 1  use this format:
 
 {{
   "briefAnalysis": {{
-  targetWeight: number;
-  fitnessLevel: string;
-  primaryFitnessGoal: string;
+    "targetWeight": number,
+    "fitnessLevel": string,
+    "primaryFitnessGoal": string
   }},
-    "advices": {{
-    "nutrition": "string",
-    "hydration": "string",
-    "recovery": "string",
-    "progress": "string"
+  "advices": {{
+    "nutrition": "string (at least 5 sentences)",
+    "hydration": "string (at least 5 sentences)",
+    "recovery": "string (at least 5 sentences)",
+    "progress": "string (at least 5 sentences)"
   }},
-  week1Title:"Muscle Gain & Endurance",
-  week2Title:...,
-  week3Title:...,
-  week4Title:...,   
-  day:
-      {{ "day": "Upper Body Focus"|"Lower Body Focus"|"Rest Day / Active Recovery"|"Full Body & Core","calories":"number""status":"Pending", "exercises": [{{"imageUrl":"string","status":"incompleted","calories":"number",, "title": "string","repeats": number|null, "time": number|null,"instruction":"string","advices":"string", }}] }} -// time must be in seconds 
- 
- 
-    
-   }}
-Please return ONLY valid JSON. No explanations, no comments, no extra brackets or symbols. In EACH DAY MUST BE CALORIES field which value is sum of exercises calories fields.!!!Exercise with repeats must have time:null and with time must have repeats:null!!!! In the field- advices add to each of filds in in it at least 5 sentences.
+  "week1Title": "string",
+  "week2Title": "string",
+  "week3Title": "string",
+  "week4Title": "string",
+  "day": {{
+      "dayNumber": {dayNumber},
+    "day": "Upper Body Focus" | "Lower Body Focus" | "Rest Day / Active Recovery" | "Full Body & Core",
+    "calories": number,
+    "status": "Pending",
+    "exercises": [
+      {{
+        "imageUrl": "string",
+        "status": "incompleted",
+        "calories": number,
+        "title": "string",
+        "repeats": number | null,
+        "time": number | null,  # time must be in seconds
+        "instruction": "string",
+        "advices": "string"
+      }}
+    ]
+  }}
+}}
+
+If dayNumber > 1  use this format ONLY:
+
+{{
+  "day": {{
+    "day": "Upper Body Focus" | "Lower Body Focus" | "Rest Day / Active Recovery" | "Full Body & Core",
+    "dayNumber": {dayNumber},
+    "calories": number,
+    "status": "Pending",
+    "exercises": [
+      {{
+        "imageUrl": "string",
+        "status": "incompleted",
+        "calories": number,
+        "title": "string",
+        "repeats": number | null,
+        "time": number | null,  # time must be in seconds
+        "instruction": "string",
+        "advices": "string"
+      }}
+    ]
+  }}
+}}
+
+---
+
+Additional strict rules:
+- For exercises: if `repeats` is not null  `time` must be null, and vice versa.
+- `calories` inside `day` MUST equal the sum of all exercises' calories.
+- Return ONLY valid JSON. No explanations, no comments, no extra text.
 """  
  
         completion= client.chat.completions.create(
@@ -215,7 +265,7 @@ Please return ONLY valid JSON. No explanations, no comments, no extra brackets o
             ],
             temperature=0.7
         )
-        return {"AIreport": completion.choices[0].message.content,"imageUrl":content["url"]}
+        return {"AIreport": completion.choices[0].message.content}
     except Exception as error:
         raise HTTPException(status_code=500,detail=str(error))
 
