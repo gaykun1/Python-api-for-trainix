@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile,File,HTTPException,Form,Query
 from fastapi.middleware.cors import CORSMiddleware
 import requests
-from fastapi.responses import JSONResponse
+
 import json
 import boto3 
 import os
@@ -36,7 +36,10 @@ s3 = boto3.client(
     region_name=os.getenv("AWS_REGION"),
     )
 BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME")
+
+# uploading to s3-bucket
 async def uploadToCloud(image:UploadFile=File()):
+    
     try:
         contents = await image.read()
         s3.upload_fileobj(
@@ -119,7 +122,7 @@ def getMetrics(url:str,poseHeight,gender,poseWeight):
     h,w,_=image.shape
     return calculateMetrics(height=h,width=w,landmarks=results.pose_landmarks.landmark,poseHeight=poseHeight,gender=gender,poseWeight=poseWeight)
 
-# api
+#class to describe request-body object
 class UserInfo(BaseModel):
     weight: float
     height: float
@@ -136,13 +139,18 @@ class UserInfo(BaseModel):
 # api for analyzing photo and creating fitness plan
 @app.post("/api/photo-analyze")
 async def func(image:UploadFile = File(),userInfo:str=Form()):
+    # if not jpeg or png -return error 400
     if image.content_type not in ["image/jpeg", "image/png"]:
         raise HTTPException(status_code=400,detail="Wrong format")
+    # uploading to s3-bucket 
     content = await uploadToCloud(image)
+    #from json to dict and unpacking to object
     data = json.loads(userInfo)
     userInfo = UserInfo(**data)
+    # getting counted metrics from the image witth mediapipe
     metrics = getMetrics(url=content["url"],poseHeight=userInfo.height,gender=userInfo.gender,poseWeight=userInfo.weight)
     try:
+        # metrics to return
         metrics = {
       "height": userInfo.height,
       "weight": userInfo.weight,
@@ -157,10 +165,11 @@ async def func(image:UploadFile = File(),userInfo:str=Form()):
     except Exception as error:
         raise HTTPException(status_code=500,detail=str(error))
 
-# api for analyzing user metrics + extra info and creating fitness plan 
+#api for creating fitness plan 
 @app.post("/api/fitnessPlan") 
 async def func(userInfo:UserInfo,dayNumber: int = Query(..., description="Number of the day to generate")):
     try:
+        # prompt to chatgpt
         prompt =  f"""
 You are a professional certified fitness coach.
 
@@ -227,36 +236,25 @@ If dayNumber == 1  use this format:
 }}
 
 If dayNumber > 1  use this format ONLY:
-
+# other info will be added in the future
 {{
   "day": {{
-    "day": "Upper Body Focus" | "Lower Body Focus" | "Rest Day / Active Recovery" | "Full Body & Core",
+    "day": "Upper Body Focus" | "Lower Body Focus" | "Rest Day / Active Recovery" | "Full Body & Core", --- without exercicies choose specific type of exercises that will be added later
     "dayNumber": {dayNumber},
-    "calories": number,
     "status": "Pending",
-    "exercises": [
-      {{
-        "imageUrl": "string",
-        "status": "incompleted",
-        "calories": number,
-        "title": "string",
-        "repeats": number | null,
-        "time": number | null,  # time must be in seconds
-        "instruction": "string",
-        "advices": "string"
-      }}
-    ]
+    "date": Date,
   }}
 }}
 
 ---
 
 Additional strict rules:
-- For exercises: if `repeats` is not null  `time` must be null, and vice versa.
-- `calories` inside `day` MUST equal the sum of all exercises' calories.
+- For dayNumber > 1, choose the type of day properly from these options (as a detail 28 day plan according to metrics):
+  "Upper Body Focus", "Lower Body Focus", "Rest Day / Active Recovery", "Full Body & Core".
+- Avoid repeating the same type three days in a row.
 - Return ONLY valid JSON. No explanations, no comments, no extra text.
 """  
- 
+        # configuration for gpt requests   
         completion= client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -270,11 +268,88 @@ Additional strict rules:
         raise HTTPException(status_code=500,detail=str(error))
 
 
-# api for analyzing user metrics + extra info and creating nutrition plan 
+class FitnessDayBody(BaseModel):
+    dayNumber:int
+    day:str
+    date:str
+
+#api for filling day container
+@app.post("/api/fitnessPlan/day") 
+async def func(userInfo:UserInfo,day:FitnessDayBody):
+    try:
+        # prompt to chatgpt
+        prompt =  f"""
+You are a professional certified fitness coach.
+
+Your task is to generate JSON fitness plans depending on the day number.
+
+User data:
+- Height: {userInfo.height} cm
+- Weight: {userInfo.weight} kg
+- Waist to Hip Ratio: {userInfo.waistToHipRatio}
+- Shoulder to Waist Ratio: {userInfo.shoulderToWaistRatio}
+- Target Weight: {userInfo.targetWeight} kg
+- Fitness Level: {userInfo.fitnessLevel}
+- Primary Fitness Goal: {userInfo.primaryFitnessGoal}
+- BodyFat Percent: {userInfo.bodyFatPercent}
+- Muscle Mass: {userInfo.muscleMass}
+- Lean Body Mass: {userInfo.leanBodyMass}
+
+Day number: {day.dayNumber}
+
+---
+
+### JSON FORMAT
+
+"day": {{
+    "day": {day.day},
+    "dayNumber": {day.dayNumber},
+    "calories": number,
+    "status": "Pending",
+    "date":{day.date}
+    "exercises": [
+      {{
+        "imageUrl": "string",
+        "status": "incompleted",
+        "calories": number,
+        "title": "string",
+        "repeats": number | null,
+        "time": number | null,  # time must be in seconds
+        "instruction": "string",
+        "advices": "string"
+      }}
+    ]
+  }}
+
+
+  - For exercises: if `repeats` is not null  `time` must be null, and vice versa.
+- `calories` inside `day` MUST equal the sum of all exercises' calories.
+- day nad dayNymber field must be static dont create a new one leave these values for them
+---
+
+
+"""  
+        # configuration for gpt requests   
+        completion= client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are fitness coach"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        return {"AIreport": completion.choices[0].message.content}
+    except Exception as error:
+        raise HTTPException(status_code=500,detail=str(error))
+
+
+
+# api for creating nutrition plan 
 @app.post("/api/nutrition")    
 async def func(userInfo:UserInfo,dayNumber: int = Query(..., description="Number of the day to generate")):
    
     try:
+         # prompt to chatgpt
         prompt = f"""
         You are a professional certified nutritionist.
 
@@ -331,6 +406,7 @@ async def func(userInfo:UserInfo,dayNumber: int = Query(..., description="Number
         Return ONLY valid JSON, parseable.IN the meal title must be only name of the dish without words breakfast - etc.Sum of all calories of the meals must be the value of dailyGoals.calories and so with fats protein carbs
         """
  
+        # configuration for gpt requests 
         completion= client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
