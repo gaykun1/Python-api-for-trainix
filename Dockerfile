@@ -1,7 +1,8 @@
 FROM python:3.10-slim
 
-# creating user 
+WORKDIR /app
 
+# creating user 
 RUN addgroup myGroup && adduser --ingroup myGroup User
 
 RUN apt-get update && apt-get install -y \
