@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 # creating user 
 
-RUN addgroup myGroup && adduser -S -G myGroup User
+RUN addgroup myGroup && adduser --ingroup myGroup User
 
 RUN apt-get update && apt-get install -y \
     build-essential \
