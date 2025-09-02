@@ -138,7 +138,7 @@ class UserInfo(BaseModel):
  
 # api for analyzing photo and creating fitness plan
 @app.post("/api/photo-analyze")
-async def func(image:UploadFile = File(),userInfo:str=Form()):
+async def func(image:UploadFile = File(),userInfo=Form()):
     # if not jpeg or png -return error 400
     if image.content_type not in ["image/jpeg", "image/png"]:
         raise HTTPException(status_code=400,detail="Wrong format")
