@@ -22,7 +22,7 @@ RUN pip install --upgrade openai
 
 COPY . .
 
-RUN chown -R User:myGroup
+RUN chown -R User:myGroup /app
 
 USER User
 
