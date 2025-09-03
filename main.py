@@ -1,7 +1,6 @@
 from fastapi import FastAPI, UploadFile,File,HTTPException,Form,Query
 from fastapi.middleware.cors import CORSMiddleware
 import requests
-
 import json
 import boto3 
 import os
@@ -39,7 +38,6 @@ BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME")
 
 # uploading to s3-bucket
 async def uploadToCloud(image:UploadFile=File()):
-    
     try:
         contents = await image.read()
         s3.upload_fileobj(
@@ -341,8 +339,6 @@ Day number: {day.dayNumber}
         return {"AIreport": completion.choices[0].message.content}
     except Exception as error:
         raise HTTPException(status_code=500,detail=str(error))
-
-
 
 # api for creating nutrition plan 
 @app.post("/api/nutrition")    
