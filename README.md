@@ -70,7 +70,6 @@ uvicorn main:app --reload
 ## 🐳 Docker
 
 ```bash
-cd backend
 docker build -t trainix-backend-python .
 docker run -p 5200:5200 trainix-backend-python
 ```
