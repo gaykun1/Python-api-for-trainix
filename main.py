@@ -162,7 +162,14 @@ async def func(image:UploadFile = File(),userInfo=Form()):
         return {"AIreport": metrics,"imageUrl":content["url"]}
     except Exception as error:
         raise HTTPException(status_code=500,detail=str(error))
-
+# api for pinging server 
+@app.get("/api/ping")
+async def func():
+    return {"ping":"hello world!"}
+    
+    
+    
+    
 #api for creating fitness plan 
 @app.post("/api/fitnessPlan") 
 async def func(userInfo:UserInfo,dayNumber: int = Query(..., description="Number of the day to generate")):
